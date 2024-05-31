@@ -11,18 +11,21 @@ TITLE SNAKE JUEGO DEL SNAKE
     SNAKE_CHAR DB 'S'
     SNAKE_LARGO DW 5
     INC_COL DB 0
-    INC_REN DB 0
+    INC_REN DB -1
     DIRECCION_SNAKE DB 1 ;1 UP, 2 DOWN, 3 LEFT, 4 RIGHT
     
     ; Colocar en el centro del campo de juego
     CENTRO_COL DB 40
     CENTRO_REN DB 11
     
-    
     MANZANA_COLOR DB 01000100B ; COLOR DE LA MANZANA
     MANZANA_CHAR DB 'M'
     MANZANA_REN DB 10
     MANZANA_COL DB 10
+    
+    SCORE_COLOR DB 01110000B
+    SCORE_TEXTO DB 'SCORE:$'
+    SCORE DB 8
 
 .CODE
 MAIN PROC
@@ -50,10 +53,12 @@ MAIN PROC
     
     ; GENERAR Y MOSTRAR LAS MANZANAS
     CALL MANZANAS
+    CALL IMPRIMIR_SCORE
     
     MOV CX,500
     
 CICLO_PRINCIPAL:
+    
     CALL DESPLIEGA_SNAKE
     CALL ESPERA
     CALL BORRA_SNAKE
@@ -74,6 +79,9 @@ NEXT:
     MOV AH,1
     INT 21H
 
+    
+TERMINAR:
+    CALL GAME_OVER
     MOV AH, 4CH
     INT 21H
 MAIN ENDP
@@ -113,6 +121,31 @@ MUESTRA_SNAKE:
     MOV BH,0
     INT 10H
     
+    ; LEER SI HAY MANZANA
+    MOV AH, 8
+    MOV BH, 0
+    INT 10H
+    
+    CMP AL, 4DH
+    JE MZN
+    JMP CONTINUA
+MZN:
+    CALL INCREMENTAR_SNAKE
+    ; CAMBIAR A POSICION DE COL Y REN DE LA SNAKE
+    MOV AH,2
+    MOV DL,SNAKE_COL[SI]
+    MOV DH,SNAKE_REN[SI]
+    MOV BH,0
+    INT 10H
+    CMP SCORE, 9
+    JE YA
+    JMP CONTINUA
+YA:
+    CALL GAME_OVER
+    
+CONTINUA:
+    ; VALIDAR SI CHOCA
+    ;CALL REVISAR_BORDE
     ; DESPLEGAR EL CHAR DEL SNAKE
     MOV AH,9
     MOV AL, SNAKE_CHAR
@@ -136,9 +169,6 @@ ESPERA PROC
     MOV CX, 0FFFFH
     
 CICLO_ESPERA:
-    NOP
-    NOP
-    NOP
     NOP
     NOP
     NOP
@@ -240,71 +270,330 @@ FIN:
     RET    
 CAMBIA_DIRECCION ENDP
  
+
 MANZANAS PROC
-    PUSH CX
-    MOV CX,10
-    
+    push cx
+    mov cx, 10            ; Iterar 10 veces para imprimir 10 manzanas
+
 MOSTRAR_MANZANA:
-    ; GENERAR NUMERO ALEATORIO
-    ; Obtener la hora del sistema
-    MOV AH, 2Ch  
-    INT 21h     
-    
-    MOV CL, DH   ; Mueve los segundos a CL
-    
-    ; Inicializar el generador de n?meros aleatorios con la semilla
-    MOV BX, 19585
-    MOV AX, 0
-    MOV AL, CL
-    MUL BX
-    ADD AX, 12345
-    MOV CX, AX
+    ; Generar n?mero aleatorio para columna (1-77)
+    call generarX
 
-    ; Generar una coordenada aleatoria para la columna (entre 1 y 80)
-    MOV BL, 80
-    XOR DX, DX
-    MOV AX, CX
-    DIV BL
-    INC AL
-    MOV MANZANA_COL, AL
+    ; Generar n?mero aleatorio para fila (1-22)
+    call generarY
 
-    ; Generar una coordenada aleatoria para la fila (entre 1 y 25)
-    MOV BL, 25
-    XOR DX, DX
-    MOV AX, CX
-    DIV BL
-    INC AL
-    MOV MANZANA_REN, AL
+    ; Cambiar la posici?n del cursor
+    mov ah, 02h
+    mov dl, MANZANA_COL
+    mov dh, MANZANA_REN
+    mov bh, 00h
+    int 10h
     
-    
-    
-    
-    
+    ; Desplegar el car?cter de la manzana
+    mov ah, 09h
+    mov al, MANZANA_CHAR
+    mov bh, 00h
+    mov bl, MANZANA_COLOR ; Fondo
+    mov cx, 1
+    int 10h
 
+    loop MOSTRAR_MANZANA
+
+    pop cx
+    ret
+MANZANAS ENDP
+
+generarX PROC
+    ; Generar n?mero aleatorio entre 1 y 77
+    generarX_loop:
+    mov ah, 2Ch          ; Obtener la hora
+    int 21h
+    
+    ; ch -> horas; cl -> minutos; dh -> segundos; dl -> centisegundos
+    cmp dl, 0            ; Si centisegundos es igual a 0, regenerar
+    jz generarX_loop
+    
+    mov bh, 77
+    cmp dl, bh           ; Si centisegundos es mayor o igual que 78, regenerar
+    jae generarX_loop
+    
+    mov MANZANA_COL, dl
+    ret
+generarX ENDP
+
+generarY PROC
+    ; Generar n?mero aleatorio entre 1 y 22
+    generarY_loop:
+    mov ah, 2Ch          ; Obtener la hora
+    int 21h
+    
+    ; ch -> horas; cl -> minutos; dh -> segundos; dl -> centisegundos
+    cmp dl, 0            ; Si centisegundos es igual a 0, regenerar
+    jz generarY_loop
+    
+    mov bh, 22
+    cmp dl, bh           ; Si centisegundos es mayor o igual que 23, regenerar
+    jae generarY_loop
+    
+    mov MANZANA_REN, dl
+    ret
+generarY ENDP
+INCREMENTAR_SNAKE PROC
+    INC SNAKE_LARGO
+    INC SNAKE_LARGO
+    INC SNAKE_LARGO
+    
+    INC SCORE
+    CALL IMPRIMIR_SCORE
+    
+    RET
+INCREMENTAR_SNAKE ENDP
+IMPRIMIR_SCORE PROC
+    PUSH CX
     ; CAMBIAR LA POSICION DEL CURSOR
     MOV AH,2
-    MOV DL,MANZANA_COL
-    MOV DH,MANZANA_REN
+    MOV DL,69
+    MOV DH,0
     MOV BH,0
     INT 10H
     
     ; DESPLEGAR EL CHAR DEL SNAKE
     MOV AH,9
-    MOV AL, MANZANA_CHAR
+    MOV AL, 'S'
     MOV BH,0
-    MOV BL,MANZANA_COLOR ;FONDO
+    MOV BL,SCORE_COLOR ;FONDO
+    MOV CX,1
+    INT 10H
+    
+    ; CAMBIAR LA POSICION DEL CURSOR
+    MOV AH,2
+    MOV DL,70
+    MOV DH,0
+    MOV BH,0
+    INT 10H
+    
+    ; DESPLEGAR EL CHAR DEL SNAKE
+    MOV AH,9
+    MOV AL, 'C'
+    MOV BH,0
+    MOV BL,SCORE_COLOR ;FONDO
+    MOV CX,1
+    INT 10H
+    
+    ; CAMBIAR LA POSICION DEL CURSOR
+    MOV AH,2
+    MOV DL,71
+    MOV DH,0
+    MOV BH,0
+    INT 10H
+    
+    ; DESPLEGAR EL CHAR DEL SNAKE
+    MOV AH,9
+    MOV AL, 'O'
+    MOV BH,0
+    MOV BL,SCORE_COLOR ;FONDO
+    MOV CX,1
+    INT 10H
+    
+    ; CAMBIAR LA POSICION DEL CURSOR
+    MOV AH,2
+    MOV DL,72
+    MOV DH,0
+    MOV BH,0
+    INT 10H
+    
+    ; DESPLEGAR EL CHAR DEL SNAKE
+    MOV AH,9
+    MOV AL, 'R'
+    MOV BH,0
+    MOV BL,SCORE_COLOR ;FONDO
+    MOV CX,1
+    INT 10H
+    
+    ; CAMBIAR LA POSICION DEL CURSOR
+    MOV AH,2
+    MOV DL,73
+    MOV DH,0
+    MOV BH,0
+    INT 10H
+    
+    ; DESPLEGAR EL CHAR DEL SNAKE
+    MOV AH,9
+    MOV AL, 'E'
+    MOV BH,0
+    MOV BL,SCORE_COLOR ;FONDO
+    MOV CX,1
+    INT 10H
+    
+    ; CAMBIAR LA POSICION DEL CURSOR
+    MOV AH,2
+    MOV DL,74
+    MOV DH,0
+    MOV BH,0
+    INT 10H
+    
+    ; DESPLEGAR EL CHAR DEL SNAKE
+    MOV AH,9
+    MOV AL, ':'
+    MOV BH,0
+    MOV BL,SCORE_COLOR ;FONDO
+    MOV CX,1
+    INT 10H
+    
+    
+    
+    ; CAMBIAR LA POSICION DEL CURSOR
+    MOV AH,2
+    MOV DL,75
+    MOV DH,0
+    MOV BH,0
+    INT 10H
+    
+    ;Despelgar SCORE
+    MOV DL, SCORE
+    OR DL, 30h 
+
+    ; DESPLEGAR EL CHAR DEL SNAKE
+    MOV AH,9
+    MOV AL, DL
+    MOV BH,0
+    MOV BL,SCORE_COLOR ;FONDO
+    MOV CX,1
+    INT 10H
+    
+    
+    POP CX
+    RET
+IMPRIMIR_SCORE ENDP
+
+GAME_OVER PROC
     PUSH CX
+    ; CAMBIAR LA POSICION DEL CURSOR
+    MOV AH,2
+    MOV DL,32
+    MOV DH,0
+    MOV BH,0
+    INT 10H
+    
+    ; DESPLEGAR EL CHAR DEL SNAKE
+    MOV AH,9
+    MOV AL,'G'
+    MOV BH,0
+    MOV BL,SCORE_COLOR ;FONDO
+    MOV CX,1
+    INT 10H
+    
+    ; CAMBIAR LA POSICION DEL CURSOR
+    MOV AH,2
+    MOV DL,33
+    MOV DH,0
+    MOV BH,0
+    INT 10H
+    
+    ; DESPLEGAR EL CHAR DEL SNAKE
+    MOV AH,9
+    MOV AL,'A'
+    MOV BH,0
+    MOV BL,SCORE_COLOR ;FONDO
+    MOV CX,1
+    INT 10H
+    
+    ; CAMBIAR LA POSICION DEL CURSOR
+    MOV AH,2
+    MOV DL,34
+    MOV DH,0
+    MOV BH,0
+    INT 10H
+    
+    ; DESPLEGAR EL CHAR DEL SNAKE
+    MOV AH,9
+    MOV AL,'M'
+    MOV BH,0
+    MOV BL,SCORE_COLOR ;FONDO
+    MOV CX,1
+    INT 10H
+    
+    ; CAMBIAR LA POSICION DEL CURSOR
+    MOV AH,2
+    MOV DL,35
+    MOV DH,0
+    MOV BH,0
+    INT 10H
+    
+    ; DESPLEGAR EL CHAR DEL SNAKE
+    MOV AH,9
+    MOV AL,'E'
+    MOV BH,0
+    MOV BL,SCORE_COLOR ;FONDO
+    MOV CX,1
+    INT 10H
+    
+    ; CAMBIAR LA POSICION DEL CURSOR
+    MOV AH,2
+    MOV DL,37
+    MOV DH,0
+    MOV BH,0
+    INT 10H
+    
+    ; DESPLEGAR EL CHAR DEL SNAKE
+    MOV AH,9
+    MOV AL,'O'
+    MOV BH,0
+    MOV BL,SCORE_COLOR ;FONDO
+    MOV CX,1
+    INT 10H
+    
+    ; CAMBIAR LA POSICION DEL CURSOR
+    MOV AH,2
+    MOV DL,38
+    MOV DH,0
+    MOV BH,0
+    INT 10H
+    
+    ; DESPLEGAR EL CHAR DEL SNAKE
+    MOV AH,9
+    MOV AL,'V'
+    MOV BH,0
+    MOV BL,SCORE_COLOR ;FONDO
+    MOV CX,1
+    INT 10H
+    
+    ; CAMBIAR LA POSICION DEL CURSOR
+    MOV AH,2
+    MOV DL,39
+    MOV DH,0
+    MOV BH,0
+    INT 10H
+    
+    ; DESPLEGAR EL CHAR DEL SNAKE
+    MOV AH,9
+    MOV AL,'E'
+    MOV BH,0
+    MOV BL,SCORE_COLOR ;FONDO
+    MOV CX,1
+    INT 10H
+    
+    ; CAMBIAR LA POSICION DEL CURSOR
+    MOV AH,2
+    MOV DL,40
+    MOV DH,0
+    MOV BH,0
+    INT 10H
+    
+    ; DESPLEGAR EL CHAR DEL SNAKE
+    MOV AH,9
+    MOV AL,'R'
+    MOV BH,0
+    MOV BL,SCORE_COLOR ;FONDO
     MOV CX,1
     INT 10H
     
     POP CX
-    LOOP MOSTRAR_MANZANA 
-
-    POP CX
-    RET
-   
     
-MANZANAS ENDP
+    MOV AH, 4CH
+    INT 21H
+GAME_OVER ENDP
+
     END MAIN
 
     ;TAREA

@@ -52,7 +52,7 @@ BOLITA:
     MOV AH,9
     MOV BH,0
     MOV AL,'*'
-    MOV CX,5
+    MOV CX,2
     MOV BL,00111100B
     INT 10H
     
